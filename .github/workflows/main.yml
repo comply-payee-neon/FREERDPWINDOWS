@@ -216,6 +216,91 @@ jobs:
               Start-Sleep -Seconds 300
           }
 
+      # === SAVE STATE TO REPOSITORY ===
+      - name: Save Tailscale state to repository
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path "C:\ProgramData\Tailscale\server-state.conf") {
+              # Prepare state directory
+              New-Item -ItemType Directory -Path ".github\state" -Force | Out-Null
+              
+              # Copy state file
+              Copy-Item "C:\ProgramData\Tailscale\server-state.conf" -Destination ".github\state\server-state.conf" -Force
+              
+              Write-Host "✅ State file copied to repository"
+          } else {
+              Write-Host "⚠️ No state file to save"
+          }
+      
+      - name: Commit and push state
+        if: always()
+        shell: pwsh
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # Pull latest changes first to avoid conflicts
+          git pull origin main --no-edit || true
+          
+          git add .github/state/
+          
+          # Check if there are changes to commit
+          $status = git status --porcelain .github/state/
+          if ($status) {
+              git commit -m "Save Tailscale state [skip ci]"
+              git push
+              Write-Host "✅ State committed to repository"
+          } else {
+              Write-Host "ℹ️ No changes to commit"
+          }
+
+      # === SAVE STATE === (DISABLED - Service Account tidak punya storage quota)
+      - name: Save Tailscale state to Google Drive (DISABLED)
+        if: false
+        shell: pwsh
+        run: |
+          Write-Host "=== Uploading Tailscale state to Google Drive ==="
+
+          $credPath = "$env:TEMP\service-account.json"
+          $confPath = "$env:TEMP\rclone.conf"
+          $localDir = "C:\ProgramData\Tailscale"
+          $stateFile = "server-state.conf"
+          $driveFolderId = "1pa6J-zMHmhkFExunAcXWitHW1SU976Wo"
+
+          # === Write creds again ===
+          $json = '${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}'
+          
+          # Write JSON directly - it's already in correct format
+          Set-Content -Path $credPath -Value $json -Encoding UTF8 -NoNewline
+
+          # === Create rclone config ===
+          $confContent = @"
+          [drive]
+          type = drive
+          scope = drive
+          service_account_file = $credPath
+          "@
+          $confContent | Out-File -FilePath $confPath -Encoding utf8
+
+          # === Upload state file ===
+          if (Test-Path "$localDir\$stateFile") {
+              Write-Host "Uploading $stateFile to Google Drive folder ID: $driveFolderId ..."
+              try {
+                  & .\rclone.exe copy "$localDir\$stateFile" drive: --config=$confPath --drive-root-folder-id=$driveFolderId --ignore-errors --no-traverse
+                  if ($LASTEXITCODE -eq 0) {
+                      Write-Host "✅ State uploaded successfully."
+                  } else {
+                      Write-Host "⚠️ Upload exited with code $LASTEXITCODE (ignored)."
+                      $LASTEXITCODE = 0
+                  }
+              } catch {
+                  Write-Host "⚠️ Exception while uploading state — continuing anyway."
+              }
+          } else {
+              Write-Host "⚠️ No local state file found to upload."
+          }
+
       # === SAVE STATE BACK TO REPOSITORY ===
       - name: Sync and commit updated Tailscale state
         shell: pwsh

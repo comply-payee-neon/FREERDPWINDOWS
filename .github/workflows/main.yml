@@ -233,28 +233,6 @@ jobs:
               Write-Host "⚠️ No state file to save"
           }
       
-      - name: Commit and push state
-        if: always()
-        shell: pwsh
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # Pull latest changes first to avoid conflicts
-          git pull origin main --no-edit || true
-          
-          git add .github/state/
-          
-          # Check if there are changes to commit
-          $status = git status --porcelain .github/state/
-          if ($status) {
-              git commit -m "Save Tailscale state [skip ci]"
-              git push
-              Write-Host "✅ State committed to repository"
-          } else {
-              Write-Host "ℹ️ No changes to commit"
-          }
-
       # === SAVE STATE === (DISABLED - Service Account tidak punya storage quota)
       - name: Save Tailscale state to Google Drive (DISABLED)
         if: false
